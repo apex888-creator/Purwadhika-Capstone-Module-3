@@ -2,12 +2,13 @@ from langchain_core.tools import tool
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_openai.chat_models import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
 from qdrant_client import QdrantClient
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
 from dotenv import load_dotenv
 import os
-from langchain.agents import create_agent
+import pandas as pd
 from pydantic import BaseModel, Field
 from typing import Literal
 
@@ -33,116 +34,153 @@ model = ChatOpenAI(
     openai_api_base="https://openrouter.ai/api/v1"
 )
 
-
-class AgentInput(BaseModel):
-    """Input for search resume."""
-    query: str = Field(description="Search query from user")
-    history: str = Field(description="summary of chat history")
+# Memuat dataset IMDb Top 1000
+df = pd.read_csv('imdb_top_1000.csv')
 
 
-@tool
-def search_resume(query: str, k: int = 5) -> list[str]:
-    """Retrieve relevant resumes on the query."""
-
-    vector_store = QdrantVectorStore(
-        client=qdrant_client,
-        collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
-        embedding=embeddings,
-    )
-
-    docs = vector_store.similarity_search_with_score(query, k=k)
-    if docs:
-        formatted_results = []
-        for idx, result in enumerate(docs):
-            formatted_results.append(f"""
-Resume {idx + 1}:
-- ID: {result[0].metadata.get('row_index', 'N/A')}
-- Category: {result[0].metadata.get('category', 'N/A')}
-- Relevance Score: {result[1]:.3f}
-- Content Preview: {result[0].page_content[:300]}...
-""")
-
-        context = "\n".join(formatted_results)
-        return context
-    return "No relevant documents found."
+class MovieSearchInput(BaseModel):
+    keyword: str = Field(
+        description="Judul film atau kata kunci yang ingin dicari")
 
 
-@tool
-def search_resume_skill(query: str, k: int = 5) -> list[str]:
-    """Retrieve relevant resumes on the query."""
+@tool("cari_film_imdb_lengkap", args_schema=MovieSearchInput, return_direct=True)
+def cari_film_imdb_lengkap(keyword: str) -> str:
+    """Tool untuk mencari informasi film secara mendetail berdasarkan dataset IMDb."""
+    hasil = df[df['Series_Title'].str.contains(keyword, case=False, na=False)]
 
-    vector_store = QdrantVectorStore(
-        client=qdrant_client,
-        collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
-        embedding=embeddings,
-    )
+    if hasil.empty:
+        return f"Maaf, film dengan kata kunci '{keyword}' tidak ditemukan di dalam dataset."
 
-    docs = vector_store.similarity_search_with_score(query, k=k)
-    if docs:
-        formatted_data = []
-        for idx, result in enumerate(docs):
-            formatted_data.append(f"""
-Resume {idx + 1} ({result[0].metadata.get('row_index', 'N/A')}):
-{result[0].page_content[:500]}...
-""")
+    response_list = []
+    for _, row in hasil.head(3).iterrows():
+        title = row.get('Series_Title', '-')
+        year = row.get('Released_Year', '-')
+        certificate = row.get('Certificate', '-')
+        runtime = row.get('Runtime', '-')
+        genre = row.get('Genre', '-')
+        rating = row.get('IMDB_Rating', '-')
+        director = row.get('Director', '-')
+        star1 = row.get('Star1', '-')
+        gross = row.get('Gross', '-')
+        overview = row.get('Overview', '-')
 
-        context = "\n".join(formatted_data)
-        return context
-    return "No relevant documents found."
+        movie_info = (
+            f"🎬 **{title}** ({year})\n"
+            f"🏷️ Genre: {genre} | Durasi: {runtime} | Usia: {certificate}\n"
+            f"⭐ IMDb Rating: {rating} | Sutradara: {director}\n"
+            f"⭐ Pemeran Utama: {star1}\n"
+            f"💰 Pendapatan (Gross): {gross}\n"
+            f"📖 Sinopsis: {overview}\n"
+            "-----------------------------------"
+        )
+        response_list.append(movie_info)
 
-
-lf_resume_search = lf.get_prompt("resume_search_agent").get_langchain_prompt()
-
-resume_search_agent = create_agent(
-    model=model,
-    tools=[search_resume],
-    system_prompt=lf_resume_search
-)
-
-lf_skill_analyze = lf.get_prompt("skill_analyze_agent").get_langchain_prompt()
-
-skill_analyze_agent = create_agent(
-    model=model,
-    tools=[search_resume_skill],
-    system_prompt=lf_skill_analyze
-)
+    return "\n".join(response_list)
 
 
-@tool(
-    args_schema=AgentInput
-)
-def resume_search(query: str, history: str) -> str:
-    """Tool to search resumes using the resume search agent.
-    Use this when the user wants to  find/search for specific candidates or resumes
+# @tool
+# def search_resume(query: str, k: int = 5) -> list[str]:
+#     """Retrieve relevant resumes on the query."""
 
-    query: "find HR managers", "search for candidates with X skill".
-    history: chat history summary
-    """
-    result = resume_search_agent.invoke({
-        "messages": [{"role": "user", "content": query + "history chat: " + history}]
-    }, config={"callbacks": [langfuse_handler]})
-    return result["messages"][-1].text
+#     vector_store = QdrantVectorStore(
+#         client=qdrant_client,
+#         collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
+#         embedding=embeddings,
+#     )
 
+#     docs = vector_store.similarity_search_with_score(query, k=k)
+#     if docs:
+#         formatted_results = []
+#         for idx, result in enumerate(docs):
+#             formatted_results.append(f"""
+# Resume {idx + 1}:
+# - ID: {result[0].metadata.get('row_index', 'N/A')}
+# - Category: {result[0].metadata.get('category', 'N/A')}
+# - Relevance Score: {result[1]:.3f}
+# - Content Preview: {result[0].page_content[:300]}...
+# """)
 
-@tool(
-    args_schema=AgentInput
-)
-def skill_analyze(query: str, history: str) -> str:
-    """Tool to Analyze skills, create comparisons, identify gaps
-    Use when: User asks about skills, wants analysis or comparisons
-
-    query: "what skills does", "compare skills", "skills gap analysis
-    history: chat history
-    """
-    result = skill_analyze_agent.invoke({
-        "messages": [{"role": "user", "content": query + "history chat: " + history}]
-    }, config={"callbacks": [langfuse_handler]})
-    return result["messages"][-1].text
+#         context = "\n".join(formatted_results)
+#         return context
+#     return "No relevant documents found."
 
 
-lf_supervisor = lf.get_prompt("supervisor_agent").get_langchain_prompt()
-supervisor_agent = create_agent(
-    model=model,
-    tools=[search_resume, search_resume_skill],
-    system_prompt=lf_supervisor
-)
+# @tool
+# def search_resume_skill(query: str, k: int = 5) -> list[str]:
+#     """Retrieve relevant resumes on the query."""
+
+#     vector_store = QdrantVectorStore(
+#         client=qdrant_client,
+#         collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
+#         embedding=embeddings,
+#     )
+
+#     docs = vector_store.similarity_search_with_score(query, k=k)
+#     if docs:
+#         formatted_data = []
+#         for idx, result in enumerate(docs):
+#             formatted_data.append(f"""
+# Resume {idx + 1} ({result[0].metadata.get('row_index', 'N/A')}):
+# {result[0].page_content[:500]}...
+# """)
+
+#         context = "\n".join(formatted_data)
+#         return context
+#     return "No relevant documents found."
+
+
+# lf_resume_search = lf.get_prompt("resume_search_agent").get_langchain_prompt()
+
+# resume_search_agent = create_react_agent(
+#     model=model,
+#     tools=[search_resume],
+#     system_prompt=lf_resume_search
+# )
+
+# lf_skill_analyze = lf.get_prompt("skill_analyze_agent").get_langchain_prompt()
+
+# skill_analyze_agent = create_react_agent(
+#     model=model,
+#     tools=[search_resume_skill],
+#     system_prompt=lf_skill_analyze
+# )
+
+
+# @tool(
+#     args_schema=AgentInput
+# )
+# def resume_search(query: str, history: str) -> str:
+#     """Tool to search resumes using the resume search agent.
+#     Use this when the user wants to  find/search for specific candidates or resumes
+
+#     query: "find HR managers", "search for candidates with X skill".
+#     history: chat history summary
+#     """
+#     result = resume_search_agent.invoke({
+#         "messages": [{"role": "user", "content": query + "history chat: " + history}]
+#     }, config={"callbacks": [langfuse_handler]})
+#     return result["messages"][-1].text
+
+
+# @tool(
+#     args_schema=AgentInput
+# )
+# def skill_analyze(query: str, history: str) -> str:
+#     """Tool to Analyze skills, create comparisons, identify gaps
+#     Use when: User asks about skills, wants analysis or comparisons
+
+#     query: "what skills does", "compare skills", "skills gap analysis
+#     history: chat history
+#     """
+#     result = skill_analyze_agent.invoke({
+#         "messages": [{"role": "user", "content": query + "history chat: " + history}]
+#     }, config={"callbacks": [langfuse_handler]})
+#     return result["messages"][-1].text
+
+
+# lf_supervisor = lf.get_prompt("supervisor_agent").get_langchain_prompt()
+# supervisor_agent = create_react_agent(
+#     model=model,
+#     tools=[search_resume, search_resume_skill],
+#     system_prompt=lf_supervisor
+# )

@@ -6,6 +6,7 @@ from langfuse.langchain import CallbackHandler
 
 langfuse_handler = CallbackHandler()
 
+
 def send_chat(question: str, history: str) -> dict:
     result = agent.invoke(
         {"messages": history + [{"role": "user", "content": question}]},
@@ -22,10 +23,13 @@ def send_chat(question: str, history: str) -> dict:
             total_output_tokens += message.response_metadata["usage_metadata"]["output_tokens"]
         elif "token_usage" in message.response_metadata:
             # Fallback for older or different structures
-            total_input_tokens += message.response_metadata["token_usage"].get("prompt_tokens", 0)
-            total_output_tokens += message.response_metadata["token_usage"].get("completion_tokens", 0)
+            total_input_tokens += message.response_metadata["token_usage"].get(
+                "prompt_tokens", 0)
+            total_output_tokens += message.response_metadata["token_usage"].get(
+                "completion_tokens", 0)
 
-    price = 17_000*(total_input_tokens*0.15 + total_output_tokens*0.6)/1_000_000
+    price = 17_000*(total_input_tokens*0.15 +
+                    total_output_tokens*0.6)/1_000_000
 
     tool_messages = []
     for message in result["messages"]:
@@ -42,7 +46,8 @@ def send_chat(question: str, history: str) -> dict:
     }
     return response
 
-st.title("Chatbot HR ")
+
+st.title("Movies Chatbot")
 
 # Initialize chat history
 if "messages" not in st.session_state:
@@ -54,22 +59,24 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # Accept user input
-if prompt := st.chat_input("Ask me anything about Resumes!"):
+if prompt := st.chat_input("Ask me anything about Movies!"):
     messages_history = st.session_state.get("messages", [])[-20:]
-    history = "\n".join([f'{msg["role"]}: {msg["content"]}' for msg in messages_history]) or " "
+    history = "\n".join(
+        [f'{msg["role"]}: {msg["content"]}' for msg in messages_history]) or " "
 
     # Display user message in chat message container
     with st.chat_message("Human"):
         st.markdown(prompt)
     # Add user message to chat history
     st.session_state.messages.append({"role": "user", "content": prompt})
-    
+
     # Display assistant response in chat message container
     with st.chat_message("AI"):
         response = send_chat(prompt, messages_history)
         answer = response["answer"]
         st.markdown(answer)
-        st.session_state.messages.append({"role": "assistant", "content": answer})
+        st.session_state.messages.append(
+            {"role": "assistant", "content": answer})
 
     with st.expander("**Tool Calls:**"):
         st.code(response["tool_messages"])
@@ -78,4 +85,5 @@ if prompt := st.chat_input("Ask me anything about Resumes!"):
         st.code(history)
 
     with st.expander("**Usage Details:**"):
-        st.code(f'input token : {response["total_input_tokens"]}\noutput token : {response["total_output_tokens"]}')
+        st.code(
+            f'input token : {response["total_input_tokens"]}\noutput token : {response["total_output_tokens"]}')
