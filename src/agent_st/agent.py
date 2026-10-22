@@ -20,6 +20,7 @@ langfuse_handler = CallbackHandler()
 qdrant_client = QdrantClient(
     url=os.getenv("QDRANT_URL"),
     api_key=os.getenv("QDRANT_API_KEY"),
+    check_compatibility=False
 )
 
 embeddings = OpenAIEmbeddings(
@@ -35,7 +36,7 @@ model = ChatOpenAI(
 )
 
 # Memuat dataset IMDb Top 1000
-df = pd.read_csv('imdb_top_1000.csv')
+df = pd.read_csv('dataset/imdb_top_1000.csv')
 
 
 class MovieSearchInput(BaseModel):
@@ -77,6 +78,37 @@ def cari_film_imdb_lengkap(keyword: str) -> str:
 
     return "\n".join(response_list)
 
+
+@tool
+def get_relevant_movies(question):
+    """Use this tools for get relevant information about movies."""
+    results = qdrant_client.similarity_search(
+        question,
+        k=5
+    )
+    return results
+
+
+# 1. Membuat ReAct Agent menggunakan LangGraph
+tools = [cari_film_imdb_lengkap, get_relevant_movies]
+agent_executor = create_react_agent(model, tools)
+supervisor_agent = create_react_agent(model, tools)
+
+# 2. Contoh cara menjalankan agent dengan callback Langfuse
+if __name__ == "__main__":
+    query = "Tolong carikan informasi lengkap mengenai film Chaplin"
+
+    print(f"Query: {query}\n" + "="*40)
+
+    # Menjalankan agent dengan menyertakan langfuse_handler pada config
+    response = agent_executor.invoke(
+        {"messages": [("user", query)]},
+        config={"callbacks": [langfuse_handler]}
+    )
+
+    # Menampilkan pesan terakhir dari agent
+    print("\nJawaban Agent:")
+    print(response["messages"][-1].content)
 
 # @tool
 # def search_resume(query: str, k: int = 5) -> list[str]:

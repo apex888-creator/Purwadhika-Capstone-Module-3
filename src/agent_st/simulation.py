@@ -74,7 +74,8 @@ if prompt := st.chat_input("Ask me anything about Movies!"):
     with st.chat_message("AI"):
         response = send_chat(prompt, messages_history)
         answer = response["answer"]
-        st.markdown(answer)
+        st.markdown(
+            f"<div style='font-size: 14px; line-height: 1.5; white-space: pre-line;'>{answer}</div>", unsafe_allow_html=True)
         st.session_state.messages.append(
             {"role": "assistant", "content": answer})
 
