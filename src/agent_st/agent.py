@@ -1,4 +1,5 @@
 from langchain_core.tools import tool
+from langchain_core.messages import SystemMessage
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_openai.chat_models import ChatOpenAI
@@ -86,12 +87,13 @@ def get_relevant_movies(question):
         question,
         k=5
     )
-    return results
+    return [d.page_content for d in results]
 
 
 # 1. Membuat ReAct Agent menggunakan LangGraph
 tools = [cari_film_imdb_lengkap, get_relevant_movies]
-agent_executor = create_react_agent(model, tools)
+agent_executor = create_react_agent(model, tools, prompt=SystemMessage(
+    content="You are a helpful assistant that can answer questions about movies and retrieve relevant information from the IMDb dataset. Use the provided tools to find detailed information about movies based on user queries. If you cannot find the answer in the dataset, respond with 'Maaf, saya tidak dapat menemukan informasi yang relevan.'"))
 supervisor_agent = create_react_agent(model, tools)
 
 # 2. Contoh cara menjalankan agent dengan callback Langfuse
