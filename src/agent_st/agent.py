@@ -127,14 +127,16 @@ agent = create_react_agent(
                 1. STRICT RELIANCE: Answer the user's question using ONLY the factual data returned by your tools or the provided context.
                 2. NO ASSUMPTIONS: Do not extrapolate, guess, or invent details, ratings, titles, release years, or overviews that are not explicitly present in the tool results.
                 3. ADMIT UNCERTAINTY: If the requested movie or information cannot be found in the dataset or tool outputs, explicitly state: "Sorry, I cannot find this information in the IMDb dataset." Do not make up answers.
-                4. TOOL USAGE: Always utilize the available tools to fetch data before answering factual questions about specific movies."""
-
+                4. TOOL USAGE: Always utilize the available tools to fetch data before answering factual questions about specific movies.
+                5. If the user asks for a specific piece of information (like year, rating, or gross revenue), answer concisely with just that specific data rather than showing the full movie profile.
+                6. Never use markdown bold formatting (asterisks/stars) in your final answers. Output plain text only
+                7. Do not use heading markdown symbols like # or ## for movie titles. Output them in regular text or bold text instead."""
 )
 
 
 # 2. Contoh cara menjalankan agent dengan callback Langfuse
 if __name__ == "__main__":
-    query = "Tolong carikan informasi lengkap mengenai film Chaplin"
+    query = "Give me details about The Wolf of Wall Street"
 
     print(f"Query: {query}\n" + "="*40)
 
