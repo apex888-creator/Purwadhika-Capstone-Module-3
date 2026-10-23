@@ -8,7 +8,7 @@ from qdrant_client import QdrantClient
 import pandas as pd
 from dotenv import load_dotenv
 import os
-from uuid import uuid4
+from uuid import uuid5, NAMESPACE_DNS
 import logging
 from langchain_qdrant import QdrantVectorStore
 
@@ -63,6 +63,12 @@ def load_data(csv_path: str, limit=1) -> list[Document]:
     return documents
 
 
+def generate_deterministic_id(title: str, index: int) -> str:
+    """Membuat UUID yang unik tapi konsisten berdasarkan judul film."""
+    unique_string = f"{title}_{index}"
+    return str(uuid5(NAMESPACE_DNS, unique_string))
+
+
 def main():
     documents = load_data('dataset/imdb_top_1000.csv', limit=100)
 
@@ -76,16 +82,29 @@ def main():
             collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
             vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
         )
+    uuids = [
+        generate_deterministic_id(doc.metadata.get(
+            'title', 'unknown'), doc.metadata.get('row_index', i))
+        for i, doc in enumerate(documents)
+    ]
 
-    uuids = [str(uuid4()) for _ in range(len(documents))]
-    logging.info(f"Adding {len(documents)} documents to the vector store...")
+    logging.info(
+        f"Adding {len(documents)} documents to the vector store with batching...")
     vector_store = QdrantVectorStore(
         client=qdrant_client,
         collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
         embedding=embeddings,
     )
-    vector_store.add_documents(documents=documents, ids=uuids)
-    logging.info("Documents added successfully.")
+    batch_size = 10
+    for i in range(0, len(documents), batch_size):
+        batch_docs = documents[i:i + batch_size]
+        batch_ids = uuids[i:i + batch_size]
+
+        logging.info(
+            f"Uploading batch {i // batch_size + 1} (items {i} to {i + len(batch_docs)})...")
+        vector_store.add_documents(documents=batch_docs, ids=batch_ids)
+
+    logging.info("All documents added successfully.")
 
 
 if __name__ == "__main__":
