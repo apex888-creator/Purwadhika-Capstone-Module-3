@@ -54,43 +54,65 @@ def send_chat(question: str, history: str) -> dict:
 
 st.title("🎬 Movies Chatbot")
 
-# Initialize chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+if "is_verified" not in st.session_state:
+    st.session_state.is_verified = False
 
-# Display chat messages from history on app rerun
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# 2. Jika belum diverifikasi, tampilkan pertanyaan pengaman di awal
+if not st.session_state.is_verified:
+    st.warning("⚠️ Please verify that you are not a bot before using the chatbot.")
 
-# Accept user input
-if prompt := st.chat_input("Ask me anything about Movies!"):
-    # Ambil 20 riwayat pesan terakhir untuk konteks
-    messages_history = st.session_state.get("messages", [])[-20:]
+    with st.form("verification_form"):
+        st.write("**Security Verification:** What is the result of **8 + 5 - 6**?")
+        user_answer = st.text_input("Answer:")
+        submit_btn = st.form_submit_button("Submit")
 
-    # Display user message in chat message container
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    if submit_btn:
+        if user_answer.strip() == "7":
+            st.session_state.is_verified = True
+            st.success("Verification successful! Loading application...")
+            st.rerun()
+        else:
+            st.error("Incorrect answer, please try again.")
 
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
+else:
 
-    # Display assistant response in chat message container
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            response = send_chat(prompt, messages_history)
-        answer = response["answer"]
-        st.markdown(
-            f"<div style='font-size: 14px; line-height: 1.5; white-space: pre-line;'>{answer}</div>", unsafe_allow_html=True)
-        st.session_state.messages.append(
-            {"role": "assistant", "content": answer})
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-    with st.expander("**Tool Calls:**"):
-        st.code(response["tool_messages"])
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-    with st.expander("**History Chat (JSON):**"):
-        st.code(messages_history)
+    # Accept user input
+    if prompt := st.chat_input("Ask me anything about Movies!"):
+        # Ambil 20 riwayat pesan terakhir untuk konteks
+        messages_history = st.session_state.get("messages", [])[-20:]
 
-    with st.expander("**Usage Details:**"):
-        st.code(
-            f'Input Tokens: {response["total_input_tokens"]}\nOutput Tokens: {response["total_output_tokens"]}\nEstimated Price: Rp {response["price"]:.2f}')
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response = send_chat(prompt, messages_history)
+            answer = response["answer"]
+            st.markdown(
+                f"<div style='font-size: 14px; line-height: 1.5; white-space: pre-line;'>{answer}</div>", unsafe_allow_html=True)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": answer})
+
+        with st.expander("**Tool Calls:**"):
+            st.code(response["tool_messages"])
+
+        with st.expander("**History Chat (JSON):**"):
+            st.code(messages_history)
+
+        with st.expander("**Usage Details:**"):
+            st.code(
+                f'Input Tokens: {response["total_input_tokens"]}\nOutput Tokens: {response["total_output_tokens"]}\nEstimated Price: Rp {response["price"]:.2f}')
