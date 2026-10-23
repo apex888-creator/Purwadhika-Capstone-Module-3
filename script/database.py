@@ -70,7 +70,7 @@ def generate_deterministic_id(title: str, index: int) -> str:
 
 
 def main():
-    documents = load_data('dataset/imdb_top_1000.csv', limit=100)
+    documents = load_data('dataset/imdb_top_1000.csv', limit=400)
 
     collections = qdrant_client.get_collections().collections
     collection_names = [col.name for col in collections]
