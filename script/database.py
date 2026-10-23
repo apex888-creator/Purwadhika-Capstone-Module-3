@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import os
 from uuid import uuid5, NAMESPACE_DNS
 import logging
+import time
 from langchain_qdrant import QdrantVectorStore
 
 load_dotenv()
@@ -64,13 +65,13 @@ def load_data(csv_path: str, limit=1) -> list[Document]:
 
 
 def generate_deterministic_id(title: str, index: int) -> str:
-    """Membuat UUID yang unik tapi konsisten berdasarkan judul film."""
+    """Generates a unique yet consistent UUID based on the movie title."""
     unique_string = f"{title}_{index}"
     return str(uuid5(NAMESPACE_DNS, unique_string))
 
 
 def main():
-    documents = load_data('dataset/imdb_top_1000.csv', limit=400)
+    documents = load_data('dataset/imdb_top_1000.csv', limit=1000)
 
     collections = qdrant_client.get_collections().collections
     collection_names = [col.name for col in collections]
@@ -103,6 +104,7 @@ def main():
         logging.info(
             f"Uploading batch {i // batch_size + 1} (items {i} to {i + len(batch_docs)})...")
         vector_store.add_documents(documents=batch_docs, ids=batch_ids)
+        time.sleep(1)
 
     logging.info("All documents added successfully.")
 

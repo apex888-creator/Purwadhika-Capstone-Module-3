@@ -1,5 +1,9 @@
+import os
+import pandas as pd
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 from langchain_core.tools import tool
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_openai.chat_models import ChatOpenAI
@@ -7,22 +11,11 @@ from langgraph.prebuilt import create_react_agent
 from qdrant_client import QdrantClient
 from langfuse import Langfuse
 from langfuse.langchain import CallbackHandler
-from dotenv import load_dotenv
-import os
-import pandas as pd
-from pydantic import BaseModel, Field
-from typing import Literal
 
 load_dotenv()
 
 lf = Langfuse()
 langfuse_handler = CallbackHandler()
-
-qdrant_client = QdrantClient(
-    url=os.getenv("QDRANT_URL"),
-    api_key=os.getenv("QDRANT_API_KEY"),
-    check_compatibility=False
-)
 
 embeddings = OpenAIEmbeddings(
     model=os.getenv("EMBEDDING_MODEL"),
@@ -33,28 +26,34 @@ embeddings = OpenAIEmbeddings(
 model = ChatOpenAI(
     model=os.getenv("LLM_MODEL"),
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-    openai_api_base="https://openrouter.ai/api/v1"
+    openai_api_base="https://openrouter.ai/api/v1")
+
+qdrant = QdrantVectorStore.from_existing_collection(
+    embedding=embeddings,
+    collection_name="Capstone_3",
+    url=os.getenv("QDRANT_URL"),
+    api_key=os.getenv("QDRANT_API_KEY"),
+    check_compatibility=False
 )
 
-# Memuat dataset IMDb Top 1000
 df = pd.read_csv('dataset/imdb_top_1000.csv')
 
 
 class MovieSearchInput(BaseModel):
     keyword: str = Field(
-        description="Judul film atau kata kunci yang ingin dicari")
+        description="Movie title or keyword for search")
 
 
-@tool("cari_film_imdb_lengkap", args_schema=MovieSearchInput, return_direct=True)
-def cari_film_imdb_lengkap(keyword: str) -> str:
-    """Tool untuk mencari informasi film secara mendetail berdasarkan dataset IMDb."""
-    hasil = df[df['Series_Title'].str.contains(keyword, case=False, na=False)]
+@tool("search_exact_movies_from_raw_dataset", args_schema=MovieSearchInput, return_direct=True)
+def search_exact_movies_from_raw_dataset(keyword: str) -> str:
+    """Tool to search for detailed movie information based on the IMDb dataset CSV."""
+    result = df[df['Series_Title'].str.contains(keyword, case=False, na=False)]
 
-    if hasil.empty:
-        return f"Maaf, film dengan kata kunci '{keyword}' tidak ditemukan di dalam dataset."
+    if result.empty:
+        return f"Sorry, no movies found matching the keyword '{keyword}' in the IMDB Dataset CSV."
 
     response_list = []
-    for _, row in hasil.head(3).iterrows():
+    for _, row in result.head(3).iterrows():
         title = row.get('Series_Title', '-')
         year = row.get('Released_Year', '-')
         certificate = row.get('Certificate', '-')
@@ -68,11 +67,11 @@ def cari_film_imdb_lengkap(keyword: str) -> str:
 
         movie_info = (
             f"🎬 **{title}** ({year})\n"
-            f"🏷️ Genre: {genre} | Durasi: {runtime} | Usia: {certificate}\n"
-            f"⭐ IMDb Rating: {rating} | Sutradara: {director}\n"
-            f"⭐ Pemeran Utama: {star1}\n"
-            f"💰 Pendapatan (Gross): {gross}\n"
-            f"📖 Sinopsis: {overview}\n"
+            f"🏷️ Genre: {genre} | Duration: {runtime} | Certificate: {certificate}\n"
+            f"⭐ IMDb Rating: {rating} | Director: {director}\n"
+            f"⭐ Main Star: {star1}\n"
+            f"💰 Gross Revenue: {gross}\n"
+            f"📖 Overview: {overview}\n"
             "-----------------------------------"
         )
         response_list.append(movie_info)
@@ -81,20 +80,57 @@ def cari_film_imdb_lengkap(keyword: str) -> str:
 
 
 @tool
-def get_relevant_movies(question):
+def get_relevant_movies(question: str) -> list:
     """Use this tools for get relevant information about movies."""
-    results = qdrant_client.similarity_search(
+    results = qdrant.similarity_search(
         question,
         k=5
     )
-    return [d.page_content for d in results]
+    return [
+        f"Title: {d.metadata.get('title')}\nSinopsis: {d.page_content}"
+        for d in results
+    ]
 
 
-# 1. Membuat ReAct Agent menggunakan LangGraph
-tools = [cari_film_imdb_lengkap, get_relevant_movies]
-agent_executor = create_react_agent(model, tools, prompt=SystemMessage(
-    content="You are a helpful assistant that can answer questions about movies and retrieve relevant information from the IMDb dataset. Use the provided tools to find detailed information about movies based on user queries. If you cannot find the answer in the dataset, respond with 'Maaf, saya tidak dapat menemukan informasi yang relevan.'"))
-supervisor_agent = create_react_agent(model, tools)
+class MovieComparisonInput(BaseModel):
+    movie_1: str = Field(description="First movie title to compare")
+    movie_2: str = Field(description="Second movie title to compare")
+
+
+@tool("compare_movies", args_schema=MovieComparisonInput)
+def compare_movies(movie_1: str, movie_2: str) -> str:
+    """Tool to compare two movies side by side based on IMDb dataset."""
+    subset = df[df['Series_Title'].str.contains(
+        f"{movie_1}|{movie_2}", case=False, na=False)]
+
+    if len(subset) < 2:
+        return "Could not find one or both movies for comparison."
+    comparison_text = ""
+    for _, row in subset.iterrows():
+        comparison_text += (
+            f"🎬 **{row.get('Series_Title')}** ({row.get('Released_Year')})\n"
+            f"⭐ Rating: {row.get('IMDB_Rating')} | 💰 Gross: {row.get('Gross')} | 🏷️ Genre: {row.get('Genre')}\n"
+            "-----------------------------------\n"
+        )
+    return comparison_text
+
+
+tools = [search_exact_movies_from_raw_dataset,
+         get_relevant_movies, compare_movies]
+
+agent = create_react_agent(
+    model=model,
+    tools=[search_exact_movies_from_raw_dataset,
+           get_relevant_movies, compare_movies],
+    prompt="""You are an expert, precise, and factual AI assistant for an IMDb movie dataset application. Your primary goal is to provide accurate information strictly based on the provided tools and context.
+                CRITICAL INSTRUCTIONS TO PREVENT HALLUCINATIONS:
+                1. STRICT RELIANCE: Answer the user's question using ONLY the factual data returned by your tools or the provided context.
+                2. NO ASSUMPTIONS: Do not extrapolate, guess, or invent details, ratings, titles, release years, or overviews that are not explicitly present in the tool results.
+                3. ADMIT UNCERTAINTY: If the requested movie or information cannot be found in the dataset or tool outputs, explicitly state: "Sorry, I cannot find this information in the IMDb dataset." Do not make up answers.
+                4. TOOL USAGE: Always utilize the available tools to fetch data before answering factual questions about specific movies."""
+
+)
+
 
 # 2. Contoh cara menjalankan agent dengan callback Langfuse
 if __name__ == "__main__":
@@ -103,118 +139,11 @@ if __name__ == "__main__":
     print(f"Query: {query}\n" + "="*40)
 
     # Menjalankan agent dengan menyertakan langfuse_handler pada config
-    response = agent_executor.invoke(
-        {"messages": [("user", query)]},
+    response = agent.invoke(
+        {"messages": [{"role": "user", "content": query}]},
         config={"callbacks": [langfuse_handler]}
     )
 
     # Menampilkan pesan terakhir dari agent
     print("\nJawaban Agent:")
     print(response["messages"][-1].content)
-
-# @tool
-# def search_resume(query: str, k: int = 5) -> list[str]:
-#     """Retrieve relevant resumes on the query."""
-
-#     vector_store = QdrantVectorStore(
-#         client=qdrant_client,
-#         collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
-#         embedding=embeddings,
-#     )
-
-#     docs = vector_store.similarity_search_with_score(query, k=k)
-#     if docs:
-#         formatted_results = []
-#         for idx, result in enumerate(docs):
-#             formatted_results.append(f"""
-# Resume {idx + 1}:
-# - ID: {result[0].metadata.get('row_index', 'N/A')}
-# - Category: {result[0].metadata.get('category', 'N/A')}
-# - Relevance Score: {result[1]:.3f}
-# - Content Preview: {result[0].page_content[:300]}...
-# """)
-
-#         context = "\n".join(formatted_results)
-#         return context
-#     return "No relevant documents found."
-
-
-# @tool
-# def search_resume_skill(query: str, k: int = 5) -> list[str]:
-#     """Retrieve relevant resumes on the query."""
-
-#     vector_store = QdrantVectorStore(
-#         client=qdrant_client,
-#         collection_name=os.getenv("QDRANT_COLLECTION_NAME"),
-#         embedding=embeddings,
-#     )
-
-#     docs = vector_store.similarity_search_with_score(query, k=k)
-#     if docs:
-#         formatted_data = []
-#         for idx, result in enumerate(docs):
-#             formatted_data.append(f"""
-# Resume {idx + 1} ({result[0].metadata.get('row_index', 'N/A')}):
-# {result[0].page_content[:500]}...
-# """)
-
-#         context = "\n".join(formatted_data)
-#         return context
-#     return "No relevant documents found."
-
-
-# lf_resume_search = lf.get_prompt("resume_search_agent").get_langchain_prompt()
-
-# resume_search_agent = create_react_agent(
-#     model=model,
-#     tools=[search_resume],
-#     system_prompt=lf_resume_search
-# )
-
-# lf_skill_analyze = lf.get_prompt("skill_analyze_agent").get_langchain_prompt()
-
-# skill_analyze_agent = create_react_agent(
-#     model=model,
-#     tools=[search_resume_skill],
-#     system_prompt=lf_skill_analyze
-# )
-
-
-# @tool(
-#     args_schema=AgentInput
-# )
-# def resume_search(query: str, history: str) -> str:
-#     """Tool to search resumes using the resume search agent.
-#     Use this when the user wants to  find/search for specific candidates or resumes
-
-#     query: "find HR managers", "search for candidates with X skill".
-#     history: chat history summary
-#     """
-#     result = resume_search_agent.invoke({
-#         "messages": [{"role": "user", "content": query + "history chat: " + history}]
-#     }, config={"callbacks": [langfuse_handler]})
-#     return result["messages"][-1].text
-
-
-# @tool(
-#     args_schema=AgentInput
-# )
-# def skill_analyze(query: str, history: str) -> str:
-#     """Tool to Analyze skills, create comparisons, identify gaps
-#     Use when: User asks about skills, wants analysis or comparisons
-
-#     query: "what skills does", "compare skills", "skills gap analysis
-#     history: chat history
-#     """
-#     result = skill_analyze_agent.invoke({
-#         "messages": [{"role": "user", "content": query + "history chat: " + history}]
-#     }, config={"callbacks": [langfuse_handler]})
-#     return result["messages"][-1].text
-
-
-# lf_supervisor = lf.get_prompt("supervisor_agent").get_langchain_prompt()
-# supervisor_agent = create_react_agent(
-#     model=model,
-#     tools=[search_resume, search_resume_skill],
-#     system_prompt=lf_supervisor
-# )
