@@ -81,7 +81,7 @@ def search_exact_movies_from_raw_dataset(keyword: str) -> str:
 
 @tool
 def get_relevant_movies(question: str) -> list:
-    """Use this tools for get relevant information about movies."""
+    """Use this tools for get movies recommendations from IMDB dataset."""
     results = qdrant.similarity_search(
         question,
         k=5
