@@ -100,7 +100,7 @@ elif not st.session_state.is_verified or not st.session_state.user_name:
         st.write("**Profile:**")
         name_input = st.text_input("Enter your name:")
 
-        submit_button = st.form_submit_button("Speak to Jeffry")
+        submit_button = st.form_submit_button("Speak to Hercules")
 
         if submit_button:
             if user_answer.strip() != "7":
@@ -123,7 +123,7 @@ else:
         st.session_state.messages = [
             {
                 "role": "assistant",
-                "content": f"Hello {st.session_state.user_name}! I am Jeffry, an AI assistant for the IMDb dataset. Please ask anything about movies, ratings, or comparisons!"
+                "content": f"Hello {st.session_state.user_name}! I am Hercules, an AI assistant for the IMDb dataset. Please ask anything about movies, ratings, or comparisons!"
             }
         ]
     for message in st.session_state.messages:
@@ -144,7 +144,7 @@ else:
 
         # Display assistant response in chat message container
         with st.chat_message("assistant"):
-            with st.spinner("Jeffry still thinking..."):
+            with st.spinner("Hercules still thinking..."):
                 response = send_chat(prompt, messages_history)
             answer = response["answer"]
             st.markdown(

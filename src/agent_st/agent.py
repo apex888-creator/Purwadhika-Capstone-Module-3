@@ -9,12 +9,12 @@ from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_openai.chat_models import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from qdrant_client import QdrantClient
-from langfuse import Langfuse
+from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 
 load_dotenv()
 
-lf = Langfuse()
+langfuse = get_client()
 langfuse_handler = CallbackHandler()
 
 embeddings = OpenAIEmbeddings(
