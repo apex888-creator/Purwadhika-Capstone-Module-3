@@ -2,7 +2,6 @@ import os
 from dotenv import load_dotenv
 from langfuse import Langfuse
 
-# Inisialisasi klien Langfuse (mengambil API key dari environment variables)
 load_dotenv()
 
 langfuse = Langfuse(
@@ -12,7 +11,11 @@ langfuse = Langfuse(
 )
 
 
-def get_prompt_from_langfuse(prompt_name: str, version: int = None):
+def get_prompt_from_langfuse(prompt_name, label="production"):
     """Fungsi pembantu untuk mengambil prompt dari Langfuse"""
-    langfuse_prompt = langfuse.get_prompt(prompt_name, version=version)
-    return langfuse_prompt.compile()
+    langfuse_prompt = langfuse.get_prompt(prompt_name, label=label)
+
+    prompt_data = langfuse_prompt.prompt
+    if isinstance(prompt_data, list):
+        return prompt_data[0] if isinstance(prompt_data[0], str) else prompt_data[0].get("text", str(prompt_data[0]))
+    return prompt_data

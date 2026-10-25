@@ -3,18 +3,14 @@ import pandas as pd
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
-from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_openai.chat_models import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
-from qdrant_client import QdrantClient
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from agent_st.langfuse_client import get_prompt_from_langfuse
-from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
-from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
-from langchain_community.cross_encoders import HuggingFaceCrossEncoder
+import requests
 
 load_dotenv()
 
@@ -24,13 +20,14 @@ langfuse_handler = CallbackHandler()
 embeddings = OpenAIEmbeddings(
     model=os.getenv("EMBEDDING_MODEL"),
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-    openai_api_base="https://openrouter.ai/api/v1"
+    openai_api_base=os.getenv("OPENROUTER_API_BASE")
 )
 
 model = ChatOpenAI(
     model=os.getenv("LLM_MODEL"),
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-    openai_api_base="https://openrouter.ai/api/v1")
+    openai_api_base=os.getenv("OPENROUTER_API_BASE"),
+    temperature=0)
 
 qdrant = QdrantVectorStore.from_existing_collection(
     embedding=embeddings,
@@ -83,26 +80,35 @@ def search_exact_movies_from_raw_dataset(keyword: str) -> str:
     return "\n".join(response_list)
 
 
-cross_encoder = HuggingFaceCrossEncoder(
-    model_name="BAAI/bge-reranker-v2-m3")
-reranker = CrossEncoderReranker(model=cross_encoder, top_n=3)
-
-
 @tool
 def get_relevant_movies(question: str) -> list:
     """Use this tools for get movies recommendations from IMDB dataset."""
+    docs = qdrant.as_retriever(search_kwargs={"k": 5}).invoke(question)
 
-    base_retriever = qdrant.as_retriever(search_kwargs={"k": 5})
+    if not docs:
+        return []
 
-    compression_retriever = ContextualCompressionRetriever(
-        base_compressor=reranker,
-        base_retriever=base_retriever,
-    )
+    res = requests.post(
+        "https://openrouter.ai/api/v1/rerank",
+        headers={"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"},
+        json={
+            "model": "voyageai/rerank-2.5-lite",
+            "query": question,
+            "documents": [d.page_content for d in docs],
+            "top_n": 3
+        }
+    ).json()
 
-    compressed_docs = compression_retriever.invoke(question)
+    ranked = [docs[item["index"]]
+              for item in res.get("results", [])] or docs[:3]
+
     return [
-        f"Title: {d.metadata.get('title')}\nSinopsis: {d.page_content}"
-        for d in compressed_docs
+        f"Movie Title: {d.metadata.get('title')}\n"
+        f"IMDb Rating: {d.metadata.get('imdb_rating')}\n"
+        f"Genre: {d.metadata.get('genre')}\n"
+        f"Year: {d.metadata.get('year')}\n"
+        f"Synopsis: {d.page_content}"
+        for d in ranked
     ]
 
 
@@ -132,19 +138,21 @@ def compare_movies(movie_1: str, movie_2: str) -> str:
 tools = [search_exact_movies_from_raw_dataset,
          get_relevant_movies, compare_movies]
 
-compiled_prompt = get_prompt_from_langfuse("movie_agent_system_prompt")
+compiled_prompt = get_prompt_from_langfuse(
+    "movie-agent-system-prompt", label="latest")
 
 agent = create_react_agent(
     model=model,
     tools=[search_exact_movies_from_raw_dataset,
            get_relevant_movies, compare_movies],
-    prompt=compiled_prompt,
-)
+    prompt=compiled_prompt[0] if isinstance(
+        compiled_prompt, list) else compiled_prompt,
 
+)
 
 # 2. Contoh cara menjalankan agent dengan callback Langfuse
 if __name__ == "__main__":
-    query = "Give me details about The Wolf of Wall Street"
+    query = "Give me recommendation about action movie with high rating"
 
     print(f"Query: {query}\n" + "="*40)
 

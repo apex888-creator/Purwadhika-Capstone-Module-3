@@ -1,6 +1,3 @@
-
-from unittest import result
-
 import streamlit as st
 from langchain_core.messages import ToolMessage
 from agent_st.agent import agent
@@ -116,9 +113,7 @@ elif not st.session_state.is_verified or not st.session_state.user_name:
                 st.success("Welcome! Loading application...")
                 st.rerun()
 
-# If verified and name is entered, run the main chatbot application
 else:
-    # Initialize chat history with a personalized welcome greeting
     if "messages" not in st.session_state:
         st.session_state.messages = [
             {
@@ -130,19 +125,14 @@ else:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Accept user input
     if prompt := st.chat_input("Ask me anything about Movies!"):
-        # Ambil 20 riwayat pesan terakhir untuk konteks
         messages_history = st.session_state.get("messages", [])[-20:]
 
-        # Display user message in chat message container
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
 
-        # Display assistant response in chat message container
         with st.chat_message("assistant"):
             with st.spinner("Hercules still thinking..."):
                 response = send_chat(prompt, messages_history)
