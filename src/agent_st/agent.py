@@ -150,18 +150,15 @@ agent = create_react_agent(
 
 )
 
-# 2. Contoh cara menjalankan agent dengan callback Langfuse
 if __name__ == "__main__":
     query = "Give me recommendation about action movie with high rating"
 
     print(f"Query: {query}\n" + "="*40)
 
-    # Menjalankan agent dengan menyertakan langfuse_handler pada config
     response = agent.invoke(
         {"messages": [{"role": "user", "content": query}]},
         config={"callbacks": [langfuse_handler]}
     )
 
-    # Menampilkan pesan terakhir dari agent
     print("\nJawaban Agent:")
     print(response["messages"][-1].content)
