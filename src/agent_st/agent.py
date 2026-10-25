@@ -11,6 +11,10 @@ from langgraph.prebuilt import create_react_agent
 from qdrant_client import QdrantClient
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
+from agent_st.langfuse_client import get_prompt_from_langfuse
+from langchain_classic.retrievers.contextual_compression import ContextualCompressionRetriever
+from langchain_classic.retrievers.document_compressors import CrossEncoderReranker
+from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 
 load_dotenv()
 
@@ -79,16 +83,26 @@ def search_exact_movies_from_raw_dataset(keyword: str) -> str:
     return "\n".join(response_list)
 
 
+cross_encoder = HuggingFaceCrossEncoder(
+    model_name="BAAI/bge-reranker-v2-m3")
+reranker = CrossEncoderReranker(model=cross_encoder, top_n=3)
+
+
 @tool
 def get_relevant_movies(question: str) -> list:
     """Use this tools for get movies recommendations from IMDB dataset."""
-    results = qdrant.similarity_search(
-        question,
-        k=5
+
+    base_retriever = qdrant.as_retriever(search_kwargs={"k": 5})
+
+    compression_retriever = ContextualCompressionRetriever(
+        base_compressor=reranker,
+        base_retriever=base_retriever,
     )
+
+    compressed_docs = compression_retriever.invoke(question)
     return [
         f"Title: {d.metadata.get('title')}\nSinopsis: {d.page_content}"
-        for d in results
+        for d in compressed_docs
     ]
 
 
@@ -118,19 +132,13 @@ def compare_movies(movie_1: str, movie_2: str) -> str:
 tools = [search_exact_movies_from_raw_dataset,
          get_relevant_movies, compare_movies]
 
+compiled_prompt = get_prompt_from_langfuse("movie_agent_system_prompt")
+
 agent = create_react_agent(
     model=model,
     tools=[search_exact_movies_from_raw_dataset,
            get_relevant_movies, compare_movies],
-    prompt="""You are an expert, precise, and factual AI assistant for an IMDb movie dataset application. Your primary goal is to provide accurate information strictly based on the provided tools and context.
-                CRITICAL INSTRUCTIONS TO PREVENT HALLUCINATIONS:
-                1. STRICT RELIANCE: Answer the user's question using ONLY the factual data returned by your tools or the provided context.
-                2. NO ASSUMPTIONS: Do not extrapolate, guess, or invent details, ratings, titles, release years, or overviews that are not explicitly present in the tool results.
-                3. ADMIT UNCERTAINTY: If the requested movie or information cannot be found in the dataset or tool outputs, explicitly state: "Sorry, I cannot find this information in the IMDb dataset." Do not make up answers.
-                4. TOOL USAGE: Always utilize the available tools to fetch data before answering factual questions about specific movies.
-                5. If the user asks for a specific piece of information (like year, rating, or gross revenue), answer concisely with just that specific data rather than showing the full movie profile.
-                6. Never use markdown bold formatting (asterisks/stars) in your final answers. Output plain text only
-                7. Do not use heading markdown symbols like # or ## for movie titles. Output them in regular text or bold text instead."""
+    prompt=compiled_prompt,
 )
 
 
