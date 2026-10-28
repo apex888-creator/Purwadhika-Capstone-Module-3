@@ -1,14 +1,9 @@
-import os
 from dotenv import load_dotenv
-from langfuse import Langfuse
+from langfuse import get_client
 
 load_dotenv()
 
-langfuse = Langfuse(
-    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-    host=os.getenv("LANGFUSE_BASE_URL")
-)
+langfuse = get_client()
 
 
 def get_prompt_from_langfuse(prompt_name, label="production"):

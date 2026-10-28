@@ -10,6 +10,8 @@ from langgraph.prebuilt import create_react_agent
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from agent_st.langfuse_client import get_prompt_from_langfuse
+from langchain_community.agent_toolkits import SQLDatabaseToolkit
+from ...script.database import run_sqlite_database
 import requests
 
 load_dotenv()
@@ -38,6 +40,10 @@ qdrant = QdrantVectorStore.from_existing_collection(
 )
 
 df = pd.read_csv('dataset/imdb_top_1000.csv')
+
+sql_db = run_sqlite_database()
+sql_toolkit = SQLDatabaseToolkit(db=sql_db, llm=model)
+sql_tools = sql_toolkit.get_tools()
 
 
 class MovieSearchInput(BaseModel):
@@ -136,7 +142,7 @@ def compare_movies(movie_1: str, movie_2: str) -> str:
 
 
 tools = [search_exact_movies_from_raw_dataset,
-         get_relevant_movies, compare_movies]
+         get_relevant_movies, compare_movies, sql_tools]
 
 compiled_prompt = get_prompt_from_langfuse(
     "movie-agent-system-prompt", label="latest")
@@ -149,7 +155,9 @@ agent = create_react_agent(
         compiled_prompt, list) else compiled_prompt,
 
 )
-
+# HAPUS AJA IF NAME MAINNYA
+# TAMBAHIN KE SQLITE DI DATABASE.PY
+# TAMBAHIN CONVERSATION HISTORY DAN MEMORY AGENT
 if __name__ == "__main__":
     query = "Give me recommendation about action movie with high rating"
 

@@ -157,3 +157,6 @@ else:
         with st.expander("**Usage Details:**"):
             st.code(
                 f'Input Tokens: {response["total_input_tokens"]}\nOutput Tokens: {response["total_output_tokens"]}\nEstimated Price: Rp {response["price"]:.2f}')
+
+
+# line heightdi 147 dirapiin

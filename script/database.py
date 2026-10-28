@@ -4,6 +4,8 @@ from qdrant_client.models import (
     Distance,
     VectorParams,
 )
+import sqlite3
+from langchain_community.utilities import SQLDatabase
 from qdrant_client import QdrantClient
 import pandas as pd
 from dotenv import load_dotenv
@@ -70,7 +72,7 @@ def generate_deterministic_id(title: str, index: int) -> str:
     return str(uuid5(NAMESPACE_DNS, unique_string))
 
 
-def main():
+def run_qdrant_vectorstore():
     documents = load_data('dataset/imdb_top_1000.csv', limit=1000)
 
     collections = qdrant_client.get_collections().collections
@@ -109,5 +111,16 @@ def main():
     logging.info("All documents added successfully.")
 
 
+def run_sqlite_database(db_path="sqlite:///movies.db", csv_path="dataset/imdb_top_1000.csv"):
+    logging.info("Initializing SQLite database for Text-to-SQL...")
+    df = pd.read_csv(csv_path)
+    connection = sqlite3.connect("movies.db")
+    df.to_sql("movies", connection, if_exists="replace", index=False)
+    connection.close()
+    logging.info("SQLite database created and populated successfully.")
+    return SQLDatabase.from_uri(db_path)
+
+
 if __name__ == "__main__":
-    main()
+    run_qdrant_vectorstore()
+    run_sqlite_database()
