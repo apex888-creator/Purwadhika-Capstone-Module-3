@@ -144,6 +144,7 @@ def compare_movies(movie_1: str, movie_2: str) -> str:
     return comparison_text
 
 
+# compare movies dan search exact movies ubah ke sql
 tools = [search_exact_movies_from_raw_dataset,
          get_relevant_movies, compare_movies] + sql_tools
 compiled_prompt = get_prompt_from_langfuse(
@@ -154,20 +155,4 @@ agent = create_react_agent(
     tools=tools,
     prompt=compiled_prompt[0] if isinstance(
         compiled_prompt, list) else compiled_prompt,
-
 )
-# HAPUS AJA IF NAME MAINNYA
-# TAMBAHIN KE SQLITE DI DATABASE.PY
-# TAMBAHIN CONVERSATION HISTORY DAN MEMORY AGENT
-if __name__ == "__main__":
-    query = "Give me recommendation about action movie with high rating"
-
-    print(f"Query: {query}\n" + "="*40)
-
-    response = agent.invoke(
-        {"messages": [{"role": "user", "content": query}]},
-        config={"callbacks": [langfuse_handler]}
-    )
-
-    print("\nJawaban Agent:")
-    print(response["messages"][-1].content)
