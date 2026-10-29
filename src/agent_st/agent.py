@@ -1,18 +1,18 @@
 import os
-import pandas as pd
 from dotenv import load_dotenv
+import pandas as pd
 from pydantic import BaseModel, Field
+import requests
+from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_core.tools import tool
-from langchain_qdrant import QdrantVectorStore
-from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_openai.chat_models import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
+from langchain_openai.embeddings import OpenAIEmbeddings
+from langchain_qdrant import QdrantVectorStore
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
+from langgraph.prebuilt import create_react_agent
+from agent_st.database import run_sqlite_database
 from agent_st.langfuse_client import get_prompt_from_langfuse
-from langchain_community.agent_toolkits import SQLDatabaseToolkit
-from ...script.database import run_sqlite_database
-import requests
 
 load_dotenv()
 
@@ -73,7 +73,7 @@ def search_exact_movies_from_raw_dataset(keyword: str) -> str:
         overview = row.get('Overview', '-')
 
         movie_info = (
-            f"🎬 **{title}** ({year})\n"
+            f"🎬 {title} ({year})\n"
             f"🏷️ Genre: {genre} | Duration: {runtime} | Certificate: {certificate}\n"
             f"⭐ IMDb Rating: {rating} | Director: {director}\n"
             f"⭐ Main Star: {star1}\n"
@@ -133,24 +133,25 @@ def compare_movies(movie_1: str, movie_2: str) -> str:
         return "Could not find one or both movies for comparison."
     comparison_text = ""
     for _, row in subset.iterrows():
+        title = row.get('Series_Title', '-')
+        year = row.get('Released_Year', '-')
+
         comparison_text += (
-            f"🎬 **{row.get('Series_Title')}** ({row.get('Released_Year')})\n"
+            f"🎬 **{title}** ({year})\n"
             f"⭐ Rating: {row.get('IMDB_Rating')} | 💰 Gross: {row.get('Gross')} | 🏷️ Genre: {row.get('Genre')}\n"
-            "-----------------------------------\n"
+            "----------------------------\n"
         )
     return comparison_text
 
 
 tools = [search_exact_movies_from_raw_dataset,
-         get_relevant_movies, compare_movies, sql_tools]
-
+         get_relevant_movies, compare_movies] + sql_tools
 compiled_prompt = get_prompt_from_langfuse(
     "movie-agent-system-prompt", label="latest")
 
 agent = create_react_agent(
     model=model,
-    tools=[search_exact_movies_from_raw_dataset,
-           get_relevant_movies, compare_movies],
+    tools=tools,
     prompt=compiled_prompt[0] if isinstance(
         compiled_prompt, list) else compiled_prompt,
 

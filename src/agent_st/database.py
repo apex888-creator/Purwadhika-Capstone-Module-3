@@ -1,18 +1,15 @@
+import logging
+import os
+import sqlite3
+import time
+from uuid import NAMESPACE_DNS, uuid5
+from dotenv import load_dotenv
+import pandas as pd
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
+from langchain_community.utilities import SQLDatabase
 from langchain_core.documents import Document
 from langchain_openai.embeddings import OpenAIEmbeddings
-from qdrant_client.models import (
-    Distance,
-    VectorParams,
-)
-import sqlite3
-from langchain_community.utilities import SQLDatabase
-from qdrant_client import QdrantClient
-import pandas as pd
-from dotenv import load_dotenv
-import os
-from uuid import uuid5, NAMESPACE_DNS
-import logging
-import time
 from langchain_qdrant import QdrantVectorStore
 
 load_dotenv()
@@ -57,6 +54,7 @@ def load_data(csv_path: str, limit=1) -> list[Document]:
                 'genre': str(row.get('Genre', 'Unknown')),
                 'imdb_rating': float(row.get('IMDB_Rating', 0.0)),
                 'director': str(row.get('Director', 'Unknown')),
+                'poster_link': str(row.get('Poster_Link', '')),
                 'row_index': idx,
                 'source': 'imdb_top_1000.csv'
             }

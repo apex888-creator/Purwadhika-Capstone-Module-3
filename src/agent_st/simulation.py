@@ -144,7 +144,7 @@ else:
                 response = send_chat(prompt, messages_history)
             answer = response["answer"]
             st.markdown(
-                f"<div style='font-size: 14px; line-height: 1.5; white-space: pre-line;'>{answer}</div>", unsafe_allow_html=True)
+                f"<div style='font-size: 14px; line-height: 1,5; white-space: pre-line;'>{answer}</div>", unsafe_allow_html=True)
             st.session_state.messages.append(
                 {"role": "assistant", "content": answer})
 
@@ -157,6 +157,3 @@ else:
         with st.expander("**Usage Details:**"):
             st.code(
                 f'Input Tokens: {response["total_input_tokens"]}\nOutput Tokens: {response["total_output_tokens"]}\nEstimated Price: Rp {response["price"]:.2f}')
-
-
-# line heightdi 147 dirapiin
