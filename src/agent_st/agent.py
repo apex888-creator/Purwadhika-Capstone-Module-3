@@ -1,8 +1,7 @@
 import os
-from dotenv import load_dotenv
-import pandas as pd
-from pydantic import BaseModel, Field
+import sqlite3
 import requests
+from dotenv import load_dotenv
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_core.tools import tool
 from langchain_openai.chat_models import ChatOpenAI
@@ -11,7 +10,8 @@ from langchain_qdrant import QdrantVectorStore
 from langfuse import get_client
 from langfuse.langchain import CallbackHandler
 from langgraph.prebuilt import create_react_agent
-from agent_st.database import run_sqlite_database
+from pydantic import BaseModel, Field
+from agent_st.database import DB_FILE, run_sqlite_database
 from agent_st.langfuse_client import get_prompt_from_langfuse
 
 load_dotenv()
@@ -22,91 +22,113 @@ langfuse_handler = CallbackHandler()
 embeddings = OpenAIEmbeddings(
     model=os.getenv("EMBEDDING_MODEL"),
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-    openai_api_base=os.getenv("OPENROUTER_API_BASE")
+    openai_api_base=os.getenv("OPENROUTER_API_BASE"),
 )
 
 model = ChatOpenAI(
     model=os.getenv("LLM_MODEL"),
     openai_api_key=os.getenv("OPENROUTER_API_KEY"),
     openai_api_base=os.getenv("OPENROUTER_API_BASE"),
-    temperature=0)
+    temperature=0,
+)
 
 qdrant = QdrantVectorStore.from_existing_collection(
     embedding=embeddings,
-    collection_name="Capstone_3",
+    collection_name=os.getenv("QDRANT_COLLECTION_NAME", "Capstone_3"),
     url=os.getenv("QDRANT_URL"),
     api_key=os.getenv("QDRANT_API_KEY"),
-    check_compatibility=False
+    check_compatibility=False,
 )
-
-df = pd.read_csv('dataset/imdb_top_1000.csv')
 
 sql_db = run_sqlite_database()
 sql_toolkit = SQLDatabaseToolkit(db=sql_db, llm=model)
 sql_tools = sql_toolkit.get_tools()
 
 
+def _query(sql: str, params: tuple = ()) -> list[dict]:
+    """Jalankan SELECT terparameter ke movies.db dan kembalikan list dict."""
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    try:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+    finally:
+        conn.close()
+
+
+def _fmt(value, suffix: str = ""):
+    """None/NaN jadi '-', angka bulat (1995.0) jadi 1995."""
+    if value is None or (isinstance(value, float) and value != value):
+        return "-"
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return f"{value}{suffix}"
+
+
+def _movie_line(r: dict) -> str:
+    return (
+        f"Title: {_fmt(r['Series_Title'])} | Year: {_fmt(r['Released_Year'])} | "
+        f"Genre: {_fmt(r['Genre'])} | Runtime: {_fmt(r['Runtime'], ' min')} | "
+        f"Certificate: {_fmt(r['Certificate'])} | Rating: {_fmt(r['IMDB_Rating'])} | "
+        f"Director: {_fmt(r['Director'])} | Star: {_fmt(r['Star1'])} | "
+        f"Gross: {_fmt(r['Gross'])} | Overview: {_fmt(r['Overview'])}"
+    )
+
+
 class MovieSearchInput(BaseModel):
     keyword: str = Field(
-        description="Movie title or keyword for search")
+        description="Movie title or part of a title to search for")
 
 
-@tool("search_exact_movies_from_raw_dataset", args_schema=MovieSearchInput, return_direct=True)
+@tool("search_exact_movies_from_raw_dataset", args_schema=MovieSearchInput)
 def search_exact_movies_from_raw_dataset(keyword: str) -> str:
-    """Tool to search for detailed movie information based on the IMDb dataset CSV."""
-    result = df[df['Series_Title'].str.contains(keyword, case=False, na=False)]
+    """Look up a specific named movie by title (or part of a title) in the
+    movies database and return its details: year, genre, runtime, certificate,
+    rating, director, main star, gross, overview. Shows at most 3 matches."""
+    rows = _query(
+        "SELECT * FROM movies "
+        "WHERE instr(lower(Series_Title), lower(?)) > 0 "
+        "ORDER BY IMDB_Rating DESC",
+        (keyword,),
+    )
 
-    if result.empty:
-        return f"Sorry, no movies found matching the keyword '{keyword}' in the IMDB Dataset CSV."
+    if not rows:
+        return f"No movies found matching '{keyword}'."
 
-    response_list = []
-    for _, row in result.head(3).iterrows():
-        title = row.get('Series_Title', '-')
-        year = row.get('Released_Year', '-')
-        certificate = row.get('Certificate', '-')
-        runtime = row.get('Runtime', '-')
-        genre = row.get('Genre', '-')
-        rating = row.get('IMDB_Rating', '-')
-        director = row.get('Director', '-')
-        star1 = row.get('Star1', '-')
-        gross = row.get('Gross', '-')
-        overview = row.get('Overview', '-')
-
-        movie_info = (
-            f"🎬 {title} ({year})\n"
-            f"🏷️ Genre: {genre} | Duration: {runtime} | Certificate: {certificate}\n"
-            f"⭐ IMDb Rating: {rating} | Director: {director}\n"
-            f"⭐ Main Star: {star1}\n"
-            f"💰 Gross Revenue: {gross}\n"
-            f"📖 Overview: {overview}\n"
-            "-----------------------------------"
-        )
-        response_list.append(movie_info)
-
-    return "\n".join(response_list)
+    lines = [f"{len(rows)} match(es), showing {min(len(rows), 3)}."]
+    lines += [_movie_line(r) for r in rows[:3]]
+    return "\n".join(lines)
 
 
 @tool
 def get_relevant_movies(question: str) -> list:
-    """Use this tools for get movies recommendations from IMDB dataset."""
+    """Recommend movies by theme, plot, mood, or similarity to another movie
+    (semantic search). It cannot filter by year, rating, or director; use the
+    SQL tools for that."""
     docs = qdrant.as_retriever(search_kwargs={"k": 5}).invoke(question)
 
     if not docs:
         return []
 
-    res = requests.post(
-        "https://openrouter.ai/api/v1/rerank",
-        headers={"Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"},
-        json={
-            "model": "voyageai/rerank-2.5-lite",
-            "query": question,
-            "documents": [d.page_content for d in docs],
-            "top_n": 3
-        }
-    ).json()
+    try:
+        res = requests.post(
+            "https://openrouter.ai/api/v1/rerank",
+            headers={
+                "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"},
+            json={
+                "model": "voyageai/rerank-2.5-lite",
+                "query": question,
+                "documents": [d.page_content for d in docs],
+                "top_n": 3,
+            },
+            timeout=30,
+        )
+        res.raise_for_status()
+        ranked = [docs[item["index"]]
+                  for item in res.json().get("results", [])]
 
-    ranked = [docs[item["index"]]
-              for item in res.get("results", [])] or docs[:3]
+    except Exception as e:
+        print(f"[rerank gagal] {e}")
+        ranked = []
 
     return [
         f"Movie Title: {d.metadata.get('title')}\n"
@@ -123,36 +145,50 @@ class MovieComparisonInput(BaseModel):
     movie_2: str = Field(description="Second movie title to compare")
 
 
+def _find_movie(title: str):
+    """Cari satu film: utamakan judul persis, lalu judul yang mengandung kata kunci."""
+    rows = _query(
+        "SELECT * FROM movies WHERE lower(Series_Title) = lower(?)",
+        (title.strip(),),
+    )
+    if not rows:
+        rows = _query(
+            "SELECT * FROM movies "
+            "WHERE instr(lower(Series_Title), lower(?)) > 0 "
+            "ORDER BY IMDB_Rating DESC",
+            (title.strip(),),
+        )
+    return rows[0] if rows else None
+
+
 @tool("compare_movies", args_schema=MovieComparisonInput)
 def compare_movies(movie_1: str, movie_2: str) -> str:
-    """Tool to compare two movies side by side based on IMDb dataset."""
-    subset = df[df['Series_Title'].str.contains(
-        f"{movie_1}|{movie_2}", case=False, na=False)]
+    """Compare two named movies side by side: rating, gross, genre, year."""
+    first, second = _find_movie(movie_1), _find_movie(movie_2)
 
-    if len(subset) < 2:
-        return "Could not find one or both movies for comparison."
-    comparison_text = ""
-    for _, row in subset.iterrows():
-        title = row.get('Series_Title', '-')
-        year = row.get('Released_Year', '-')
+    missing = [name for name, row in ((movie_1, first), (movie_2, second))
+               if row is None]
+    if missing:
+        return "Could not find these movies in the dataset: " + ", ".join(missing)
 
-        comparison_text += (
-            f"🎬 **{title}** ({year})\n"
-            f"⭐ Rating: {row.get('IMDB_Rating')} | 💰 Gross: {row.get('Gross')} | 🏷️ Genre: {row.get('Genre')}\n"
-            "----------------------------\n"
+    lines = []
+    for r in (first, second):
+        lines.append(
+            f"Title: {_fmt(r['Series_Title'])} | Year: {_fmt(r['Released_Year'])} | "
+            f"Rating: {_fmt(r['IMDB_Rating'])} | Gross: {_fmt(r['Gross'])} | "
+            f"Genre: {_fmt(r['Genre'])}"
         )
-    return comparison_text
+    return "\n".join(lines)
 
 
-# compare movies dan search exact movies ubah ke sql
 tools = [search_exact_movies_from_raw_dataset,
          get_relevant_movies, compare_movies] + sql_tools
+
 compiled_prompt = get_prompt_from_langfuse(
-    "movie-agent-system-prompt", label="latest")
+    "movie-agent-system-prompt", label="production")
 
 agent = create_react_agent(
     model=model,
     tools=tools,
-    prompt=compiled_prompt[0] if isinstance(
-        compiled_prompt, list) else compiled_prompt,
+    prompt=compiled_prompt,
 )

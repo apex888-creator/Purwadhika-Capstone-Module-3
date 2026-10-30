@@ -1,19 +1,25 @@
 import logging
 import os
 import sqlite3
+import sys
 import time
+from pathlib import Path
 from uuid import NAMESPACE_DNS, uuid5
-from dotenv import load_dotenv
 import pandas as pd
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
+from dotenv import load_dotenv
 from langchain_community.utilities import SQLDatabase
 from langchain_core.documents import Document
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+DB_FILE = BASE_DIR / "dataset" / "movies.db"
+CSV_FILE = BASE_DIR / "dataset" / "imdb_top_1000.csv"
 
 logging.info("Initializing Qdrant client...")
 qdrant_client = QdrantClient(
@@ -71,7 +77,7 @@ def generate_deterministic_id(title: str, index: int) -> str:
 
 
 def run_qdrant_vectorstore():
-    documents = load_data('dataset/imdb_top_1000.csv', limit=1000)
+    documents = load_data(str(CSV_FILE), limit=1000)
 
     collections = qdrant_client.get_collections().collections
     collection_names = [col.name for col in collections]
@@ -109,16 +115,34 @@ def run_qdrant_vectorstore():
     logging.info("All documents added successfully.")
 
 
-def run_sqlite_database(db_path="sqlite:///movies.db", csv_path="dataset/imdb_top_1000.csv"):
-    logging.info("Initializing SQLite database for Text-to-SQL...")
-    df = pd.read_csv(csv_path)
-    connection = sqlite3.connect("movies.db")
-    df.to_sql("movies", connection, if_exists="replace", index=False)
-    connection.close()
-    logging.info("SQLite database created and populated successfully.")
-    return SQLDatabase.from_uri(db_path)
+def run_sqlite_database(force: bool = False):
+    """Buat movies.db hanya jika belum ada (atau force=True).
+
+    Gross, Runtime, Released_Year dikonversi ke angka supaya
+    ORDER BY / AVG / filter tahun lewat SQL benar.
+    """
+    if force or not DB_FILE.exists():
+        logging.info("Initializing SQLite database for Text-to-SQL...")
+        df = pd.read_csv(CSV_FILE)
+        df["Gross"] = pd.to_numeric(
+            df["Gross"].astype(str).str.replace(",", ""), errors="coerce")
+        df["Runtime"] = pd.to_numeric(
+            df["Runtime"].astype(str).str.replace(" min", ""), errors="coerce")
+        df["Released_Year"] = pd.to_numeric(
+            df["Released_Year"], errors="coerce")
+
+        connection = sqlite3.connect(DB_FILE)
+        df.to_sql("movies", connection, if_exists="replace", index=False)
+        connection.close()
+        logging.info("SQLite database created and populated successfully.")
+    return SQLDatabase.from_uri(f"sqlite:///{DB_FILE.as_posix()}")
 
 
 if __name__ == "__main__":
-    run_qdrant_vectorstore()
-    run_sqlite_database()
+    # python -m agent_st.database          -> bangun ulang SQLite saja
+    # python -m agent_st.database qdrant   -> upload ulang ke Qdrant (memakai embedding berbayar)
+    target = sys.argv[1] if len(sys.argv) > 1 else "sqlite"
+    if target == "qdrant":
+        run_qdrant_vectorstore()
+    else:
+        run_sqlite_database(force=True)

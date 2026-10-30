@@ -3,7 +3,7 @@ import html
 import json
 import os
 import sys
-
+import re
 import streamlit as st
 from langchain_core.messages import ToolMessage
 from langfuse.langchain import CallbackHandler
@@ -76,9 +76,10 @@ def send_chat(question: str, history: list[dict]) -> dict:
 def render_message(role: str, content: str):
     """Render pesan dengan format yang sama untuk history dan jawaban baru."""
     if role == "assistant":
-        safe_content = html.escape(content)
+        cleaned = re.sub(r"\n\s*\n+", "\n", content.strip())
+        safe_content = html.escape(cleaned)
         st.markdown(
-            f"<div style='white-space: pre-line; line-height: 1.5;'>"
+            f"<div style='white-space: pre-line; line-height: 1.3;'>"
             f"{safe_content}</div>",
             unsafe_allow_html=True,
         )
@@ -104,10 +105,18 @@ st.markdown(
         font-size: 15px !important;
         font-weight: normal !important;
     }
+ 
+    /* Merapatkan jarak antarbaris dan antar paragraf/list */
+    .stChatMessage p, .stChatMessage li {
+        margin-bottom: 0.2rem !important;
+        line-height: 1.3 !important;
+    }
+    .stChatMessage ol, .stChatMessage ul {
+        margin-bottom: 0.3rem !important;
+    }
     </style>
     """,
-    unsafe_allow_html=True,
-)
+    unsafe_allow_html=True)
 
 st.title("🎬 Movies Chatbot")
 
@@ -158,7 +167,7 @@ else:
         st.session_state.messages = [
             {
                 "role": "assistant",
-                "content": f"Hello {st.session_state.user_name}! I am Hercules, an AI assistant for the IMDb dataset. Please ask anything about movies, ratings, or comparisons!"
+                "content": f"Hello {st.session_state.user_name}! I am Hercules, an AI assistant for the IMDb dataset. Please ask anything about movies, ratings, or comparisons!",
             }
         ]
     if st.session_state.messages[-1]["role"] == "user":
@@ -185,8 +194,6 @@ else:
                         "tool_messages": [], "total_input_tokens": 0,
                         "total_output_tokens": 0, "price": 0,
                     }
-
-                response = send_chat(prompt, messages_history)
 
             answer = response["answer"]
             render_message("assistant", answer)
