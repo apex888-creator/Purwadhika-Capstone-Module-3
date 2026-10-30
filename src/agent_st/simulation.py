@@ -73,10 +73,6 @@ def send_chat(question: str, history: list[dict]) -> dict:
     }
 
 
-# Ganti seluruh fungsi render_message di simulation.py dengan ini.
-# Pastikan ada "import re" dan "import html" di bagian import atas.
-
-
 def render_message(role: str, content: str):
     """Render pesan assistant sebagai satu blok HTML tanpa newline, supaya
     Markdown tidak mengubah '2. ...' menjadi list bernomor yang menjorok."""
@@ -84,7 +80,6 @@ def render_message(role: str, content: str):
         st.markdown(content)
         return
 
-    # Pisahkan blok tabel markdown (baris berawalan '|') dari teks biasa
     blocks, buffer, in_table = [], [], False
     for line in content.strip().split("\n"):
         is_table_line = line.strip().startswith("|")
@@ -100,11 +95,8 @@ def render_message(role: str, content: str):
         if is_table:
             st.markdown(text)
         else:
-            # Maksimal satu baris kosong berturut-turut
             text = re.sub(r"(\n[ \t]*){3,}", "\n\n", text.strip())
             if text:
-                # Semua newline jadi <br>: HTML-nya satu baris, jadi tidak ada
-                # baris kosong yang memutus blok HTML dan memicu parsing list
                 safe_text = html.escape(text).replace("\n", "<br>")
                 st.markdown(
                     f"<div style='line-height: 1.3;'>{safe_text}</div>",
