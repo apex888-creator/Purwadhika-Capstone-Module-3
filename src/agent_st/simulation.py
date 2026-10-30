@@ -74,9 +74,9 @@ def send_chat(question: str, history: list[dict]) -> dict:
 
 
 def render_message(role: str, content: str):
-    """Render pesan dengan format yang sama untuk history DAN jawaban baru."""
+    """Render pesan dengan format yang sama untuk history dan jawaban baru."""
     if role == "assistant":
-        safe_content = html.escape(content)  # cegah HTML injection dari LLM
+        safe_content = html.escape(content)
         st.markdown(
             f"<div style='white-space: pre-line; line-height: 1.5;'>"
             f"{safe_content}</div>",
