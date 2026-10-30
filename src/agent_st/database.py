@@ -139,8 +139,6 @@ def run_sqlite_database(force: bool = False):
 
 
 if __name__ == "__main__":
-    # python -m agent_st.database          -> bangun ulang SQLite saja
-    # python -m agent_st.database qdrant   -> upload ulang ke Qdrant (memakai embedding berbayar)
     target = sys.argv[1] if len(sys.argv) > 1 else "sqlite"
     if target == "qdrant":
         run_qdrant_vectorstore()

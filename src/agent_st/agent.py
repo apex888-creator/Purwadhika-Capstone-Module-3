@@ -174,9 +174,12 @@ def compare_movies(movie_1: str, movie_2: str) -> str:
     lines = []
     for r in (first, second):
         lines.append(
-            f"Title: {_fmt(r['Series_Title'])} | Year: {_fmt(r['Released_Year'])} | "
-            f"Rating: {_fmt(r['IMDB_Rating'])} | Gross: {_fmt(r['Gross'])} | "
-            f"Genre: {_fmt(r['Genre'])}"
+            f"Title: {_fmt(r['Series_Title'])}\n"
+            f"Year: {_fmt(r['Released_Year'])}\n"
+            f"Genre: {_fmt(r['Genre'])}\n"
+            f"Rating: {_fmt(r['IMDB_Rating'])}\n"
+            f"Gross: {_fmt(r['Gross'])}\n"
+            f"Overview: {_fmt(r['Overview'])}\n"
         )
     return "\n".join(lines)
 
