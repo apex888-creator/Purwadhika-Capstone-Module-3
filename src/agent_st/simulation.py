@@ -7,6 +7,7 @@ import re
 import streamlit as st
 from langchain_core.messages import ToolMessage
 from langfuse.langchain import CallbackHandler
+from agent_st.agent import agent, langfuse
 
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), '../../')))
@@ -44,10 +45,13 @@ def count_tokens(messages: list) -> tuple[int, int]:
 
 def send_chat(question: str, history: list[dict]) -> dict:
     messages_payload = history + [{"role": "user", "content": question}]
-    result = agent.invoke(
-        {"messages": messages_payload},
-        config={"callbacks": [langfuse_handler]},
-    )
+    try:
+        result = agent.invoke(
+            {"messages": messages_payload},
+            config={"callbacks": [langfuse_handler]},
+        )
+    finally:
+        langfuse.flush()
 
     answer = result["messages"][-1].content
 
