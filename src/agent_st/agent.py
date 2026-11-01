@@ -163,7 +163,7 @@ def _find_movie(title: str):
 
 @tool("compare_movies", args_schema=MovieComparisonInput)
 def compare_movies(movie_1: str, movie_2: str) -> str:
-    """Compare two named movies side by side: rating, gross, genre, year."""
+    """Compare two or more movies side by side: rating, gross, genre, year, overview."""
     first, second = _find_movie(movie_1), _find_movie(movie_2)
 
     missing = [name for name, row in ((movie_1, first), (movie_2, second))
